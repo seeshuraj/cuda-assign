@@ -1,6 +1,6 @@
 #include <time.h>
 #include <iostream>
-#include <limits>       // std::numeric_limits
+#include <limits>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,27 +11,24 @@
 
 using namespace std;
 
-float   exponentialIntegralFloat          (const int n,const float x);
-double  exponentialIntegralDouble         (const int n,const double x);
-void    outputResults                    (const std::vector<std::vector<float>> &resultsFloat, 
-                                         const std::vector<std::vector<double>> &resultsDouble,
-                                         bool isCpu = true);
-int     parseArguments                   (int argc, char **argv);
-void    printUsage                       (void);
+float exponentialIntegralFloat(const int n, const float x);
+double exponentialIntegralDouble(const int n, const double x);
+void outputResults(const vector<vector<float>>& resultsFloat, 
+                 const vector<vector<double>>& resultsDouble,
+                 bool isCpu = true);
+int parseArguments(int argc, char **argv);
+void printUsage(void);
 
 bool verbose, timing, cpu, gpu;
 int maxIterations;
 unsigned int n, numberOfSamples;
-double a, b;    // The interval that we are going to use
+double a, b;
 
 int main(int argc, char *argv[]) {
-    unsigned int ui, uj;
     cpu = true;
     gpu = true;
     verbose = false;
     timing = false;
-    // n is the maximum order of the exponential integral that we are going to test
-    // numberOfSamples is the number of samples in the interval [0,10] that we are going to calculate
     n = 10;
     numberOfSamples = 10;
     a = 0.0;
@@ -41,58 +38,61 @@ int main(int argc, char *argv[]) {
     parseArguments(argc, argv);
 
     if (verbose) {
-        cout << "n=" << n << endl;
-        cout << "numberOfSamples=" << numberOfSamples << endl;
-        cout << "a=" << a << endl;
-        cout << "b=" << b << endl;
-        cout << "timing=" << timing << endl;
-        cout << "verbose=" << verbose << endl;
-        cout << "cpu=" << cpu << endl;
-        cout << "gpu=" << gpu << endl;
+        cout << "Parameters:" << endl;
+        cout << "  n=" << n << endl;
+        cout << "  numberOfSamples=" << numberOfSamples << endl;
+        cout << "  a=" << a << endl;
+        cout << "  b=" << b << endl;
+        cout << "  maxIterations=" << maxIterations << endl;
+        cout << "  timing=" << (timing ? "enabled" : "disabled") << endl;
+        cout << "  verbose=" << (verbose ? "enabled" : "disabled") << endl;
+        cout << "  cpu=" << (cpu ? "enabled" : "disabled") << endl;
+        cout << "  gpu=" << (gpu ? "enabled" : "disabled") << endl;
     }
 
     // Sanity checks
     if (a >= b) {
-        cout << "Incorrect interval (" << a << "," << b << ") has been stated!" << endl;
-        return 0;
+        cerr << "Error: Invalid interval [" << a << "," << b << "]" << endl;
+        return 1;
     }
     if (n <= 0) {
-        cout << "Incorrect orders (" << n << ") have been stated!" << endl;
-        return 0;
+        cerr << "Error: Invalid order n=" << n << endl;
+        return 1;
     }
     if (numberOfSamples <= 0) {
-        cout << "Incorrect number of samples (" << numberOfSamples << ") have been stated!" << endl;
-        return 0;
+        cerr << "Error: Invalid number of samples=" << numberOfSamples << endl;
+        return 1;
     }
 
-    std::vector<std::vector<float>> resultsFloatCpu, resultsFloatGpu;
-    std::vector<std::vector<double>> resultsDoubleCpu, resultsDoubleGpu;
+    vector<vector<float>> resultsFloatCpu, resultsFloatGpu;
+    vector<vector<double>> resultsDoubleCpu, resultsDoubleGpu;
     double timeTotalCpu = 0.0, timeTotalGpu = 0.0;
     double timeFloatKernel = 0.0, timeDoubleKernel = 0.0;
 
     // CPU execution
     if (cpu) {
-        struct timeval expoStart, expoEnd;
         try {
             resultsFloatCpu.resize(n, vector<float>(numberOfSamples));
             resultsDoubleCpu.resize(n, vector<double>(numberOfSamples));
-        } catch (std::bad_alloc const&) {
-            cout << "CPU results memory allocation fail!" << endl; 
-            exit(1);
+        } catch (const bad_alloc& e) {
+            cerr << "Memory allocation failed: " << e.what() << endl;
+            return 1;
         }
         
-        gettimeofday(&expoStart, NULL);
-        double division = (b - a) / static_cast<double>(numberOfSamples);
-        for (ui = 1; ui <= n; ui++) {
-            for (uj = 1; uj <= numberOfSamples; uj++) {
+        struct timeval start, end;
+        gettimeofday(&start, NULL);
+        
+        double division = (b - a) / numberOfSamples;
+        for (unsigned int ui = 1; ui <= n; ui++) {
+            for (unsigned int uj = 1; uj <= numberOfSamples; uj++) {
                 double x = a + uj * division;
                 resultsFloatCpu[ui-1][uj-1] = exponentialIntegralFloat(ui, static_cast<float>(x));
                 resultsDoubleCpu[ui-1][uj-1] = exponentialIntegralDouble(ui, x);
             }
         }
-        gettimeofday(&expoEnd, NULL);
-        timeTotalCpu = ((expoEnd.tv_sec + expoEnd.tv_usec*0.000001) - 
-                       (expoStart.tv_sec + expoStart.tv_usec*0.000001));
+        
+        gettimeofday(&end, NULL);
+        timeTotalCpu = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
     }
 
     // GPU execution
@@ -100,72 +100,64 @@ int main(int argc, char *argv[]) {
         try {
             resultsFloatGpu.resize(n, vector<float>(numberOfSamples));
             resultsDoubleGpu.resize(n, vector<double>(numberOfSamples));
-        } catch (std::bad_alloc const&) {
-            cout << "GPU results memory allocation fail!" << endl; 
-            exit(1);
+        } catch (const bad_alloc& e) {
+            cerr << "Memory allocation failed: " << e.what() << endl;
+            return 1;
         }
+        
         runGPU(resultsFloatGpu, resultsDoubleGpu, n, numberOfSamples, a, b, 
-               maxIterations, timeTotalGpu, timeFloatKernel, timeDoubleKernel);
+               maxIterations, timeTotalGpu, timeFloatKernel, timeDoubleKernel, verbose);
     }
 
     // Timing results
     if (timing) {
         if (cpu) {
-            printf("CPU execution time: %f seconds\n", timeTotalCpu);
+            printf("CPU execution time: %.6f seconds\n", timeTotalCpu);
         }
         if (gpu) {
-            printf("GPU total time: %f seconds (includes memory transfers)\n", timeTotalGpu);
-            printf("  - Float kernel time: %f seconds\n", timeFloatKernel);
-            printf("  - Double kernel time: %f seconds\n", timeDoubleKernel);
+            printf("GPU execution time: %.6f seconds\n", timeTotalGpu);
+            printf("  Float kernel time: %.6f seconds\n", timeFloatKernel);
+            printf("  Double kernel time: %.6f seconds\n", timeDoubleKernel);
             if (cpu) {
-                printf("Speedup (CPU vs GPU total time): %.2fx\n", timeTotalCpu / timeTotalGpu);
+                printf("Speedup (CPU/GPU): %.2fx\n", timeTotalCpu / timeTotalGpu);
             }
         }
     }
 
-    // Numerical validation if both CPU and GPU were executed
+    // Numerical validation
     if (cpu && gpu) {
         double maxDiffFloat = 0.0, maxDiffDouble = 0.0;
         int countDiffFloat = 0, countDiffDouble = 0;
-        double absTolerance = 1e-5;
+        const double tolerance = 1e-5;
         
-        for (ui = 0; ui < n; ui++) {
-            for (uj = 0; uj < numberOfSamples; uj++) {
-                // Compare float results
-                float cpuFloat = resultsFloatCpu[ui][uj];
-                float gpuFloat = resultsFloatGpu[ui][uj];
-                float diffFloat = fabs(cpuFloat - gpuFloat);
+        for (unsigned int i = 0; i < n; i++) {
+            for (unsigned int j = 0; j < numberOfSamples; j++) {
+                float diffFloat = fabs(resultsFloatCpu[i][j] - resultsFloatGpu[i][j]);
+                double diffDouble = fabs(resultsDoubleCpu[i][j] - resultsDoubleGpu[i][j]);
                 
-                // Compare double results
-                double cpuDouble = resultsDoubleCpu[ui][uj];
-                double gpuDouble = resultsDoubleGpu[ui][uj];
-                double diffDouble = fabs(cpuDouble - gpuDouble);
-                
-                // Track maximum differences
                 if (diffFloat > maxDiffFloat) maxDiffFloat = diffFloat;
                 if (diffDouble > maxDiffDouble) maxDiffDouble = diffDouble;
                 
-                // Count values with significant differences
-                if (diffFloat > absTolerance) countDiffFloat++;
-                if (diffDouble > absTolerance) countDiffDouble++;
+                if (diffFloat > tolerance) countDiffFloat++;
+                if (diffDouble > tolerance) countDiffDouble++;
             }
         }
         
-        printf("\nNumerical validation results:\n");
+        printf("\nNumerical Validation:\n");
         printf("Max difference (float):  %e\n", maxDiffFloat);
         printf("Max difference (double): %e\n", maxDiffDouble);
         printf("Values exceeding tolerance (1e-5):\n");
-        printf("  - Float:  %d/%d\n", countDiffFloat, n * numberOfSamples);
-        printf("  - Double: %d/%d\n", countDiffDouble, n * numberOfSamples);
+        printf("  Float:  %d/%d\n", countDiffFloat, n * numberOfSamples);
+        printf("  Double: %d/%d\n", countDiffDouble, n * numberOfSamples);
         
         if (countDiffFloat > 0 || countDiffDouble > 0) {
-            printf("WARNING: Significant numerical differences detected between CPU and GPU!\n");
+            printf("WARNING: Numerical differences detected between CPU and GPU!\n");
         } else {
             printf("SUCCESS: All values match within tolerance.\n");
         }
     }
 
-    // Output results if verbose mode is enabled
+    // Output results if verbose
     if (verbose) {
         if (cpu) {
             cout << "\n===== CPU Results =====" << endl;
@@ -180,10 +172,128 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-void outputResults(const vector<vector<float>> &resultsFloat, 
-                  const vector<vector<double>> &resultsDouble,
-                  bool isCpu) {
-    double division = (b - a) / static_cast<double>(numberOfSamples);
+float exponentialIntegralFloat(const int n, const float x) {
+    static const float eulerConstant = 0.5772156649015329f;
+    const float epsilon = 1.E-30f;
+    const float bigfloat = numeric_limits<float>::max();
+    const int nm1 = n - 1;
+    float ans = 0.0f;
+
+    if (n < 0 || x < 0.0f || (x == 0.0f && (n == 0 || n == 1))) {
+        cerr << "Bad arguments passed to exponentialIntegralFloat: n=" << n << ", x=" << x << endl;
+        exit(1);
+    }
+
+    if (n == 0) {
+        ans = expf(-x)/x;
+    } else {
+        if (x > 1.0f) {
+            float b = x + n;
+            float c = bigfloat;
+            float d = 1.0f/b;
+            float h = d;
+            
+            for (int i = 1; i <= maxIterations; i++) {
+                const float a = -i*(nm1 + i);
+                b += 2.0f;
+                d = 1.0f/(a*d + b);
+                c = b + a/c;
+                const float del = c*d;
+                h *= del;
+                if (fabsf(del - 1.0f) <= epsilon) {
+                    return h*expf(-x);
+                }
+            }
+            return h*expf(-x);
+        } else {
+            ans = (nm1 != 0) ? 1.0f/nm1 : -logf(x)-eulerConstant;
+            float fact = 1.0f;
+            
+            for (int i = 1; i <= maxIterations; i++) {
+                fact *= -x/i;
+                float del;
+                
+                if (i != nm1) {
+                    del = -fact/(i-nm1);
+                } else {
+                    float psi = -eulerConstant;
+                    for (int ii = 1; ii <= nm1; ii++) {
+                        psi += 1.0f/ii;
+                    }
+                    del = fact*(-logf(x) + psi);
+                }
+                
+                ans += del;
+                if (fabsf(del) < fabsf(ans)*epsilon) return ans;
+            }
+        }
+    }
+    return ans;
+}
+
+double exponentialIntegralDouble(const int n, const double x) {
+    static const double eulerConstant = 0.5772156649015329;
+    const double epsilon = 1.E-30;
+    const double bigDouble = numeric_limits<double>::max();
+    const int nm1 = n - 1;
+    double ans = 0.0;
+
+    if (n < 0 || x < 0.0 || (x == 0.0 && (n == 0 || n == 1))) {
+        cerr << "Bad arguments passed to exponentialIntegralDouble: n=" << n << ", x=" << x << endl;
+        exit(1);
+    }
+
+    if (n == 0) {
+        ans = exp(-x)/x;
+    } else {
+        if (x > 1.0) {
+            double b = x + n;
+            double c = bigDouble;
+            double d = 1.0/b;
+            double h = d;
+            
+            for (int i = 1; i <= maxIterations; i++) {
+                const double a = -i*(nm1 + i);
+                b += 2.0;
+                d = 1.0/(a*d + b);
+                c = b + a/c;
+                const double del = c*d;
+                h *= del;
+                if (fabs(del - 1.0) <= epsilon) {
+                    return h*exp(-x);
+                }
+            }
+            return h*exp(-x);
+        } else {
+            ans = (nm1 != 0) ? 1.0/nm1 : -log(x)-eulerConstant;
+            double fact = 1.0;
+            
+            for (int i = 1; i <= maxIterations; i++) {
+                fact *= -x/i;
+                double del;
+                
+                if (i != nm1) {
+                    del = -fact/(i-nm1);
+                } else {
+                    double psi = -eulerConstant;
+                    for (int ii = 1; ii <= nm1; ii++) {
+                        psi += 1.0/ii;
+                    }
+                    del = fact*(-log(x) + psi);
+                }
+                
+                ans += del;
+                if (fabs(del) < fabs(ans)*epsilon) return ans;
+            }
+        }
+    }
+    return ans;
+}
+
+void outputResults(const vector<vector<float>>& resultsFloat, 
+                 const vector<vector<double>>& resultsDouble,
+                 bool isCpu) {
+    double division = (b - a) / numberOfSamples;
     for (unsigned int ui = 1; ui <= n; ui++) {
         for (unsigned int uj = 1; uj <= numberOfSamples; uj++) {
             double x = a + uj * division;
@@ -194,145 +304,20 @@ void outputResults(const vector<vector<float>> &resultsFloat,
     }
 }
 
-double exponentialIntegralDouble (const int n,const double x) {
-    static const double eulerConstant=0.5772156649015329;
-    double epsilon=1.E-30;
-    double bigDouble=std::numeric_limits<double>::max();
-    int i,ii,nm1=n-1;
-    double a,b,c,d,del,fact,h,psi,ans=0.0;
-
-
-    if (n<0 || x<0.0 || (x==0.0&&( (n==0) || (n==1) ) ) ) {
-        cout << "Bad arguments were passed to the exponentialIntegral function call" << endl;
-        exit(1);
-    }
-    if (n==0) {
-        ans=exp(-x)/x;
-    } else {
-        if (x>1.0) {
-            b=x+n;
-            c=bigDouble;
-            d=1.0/b;
-            h=d;
-            for (i=1;i<=maxIterations;i++) {
-                a=-i*(nm1+i);
-                b+=2.0;
-                d=1.0/(a*d+b);
-                c=b+a/c;
-                del=c*d;
-                h*=del;
-                if (fabs(del-1.0)<=epsilon) {
-                    ans=h*exp(-x);
-                    return ans;
-                }
-            }
-            ans=h*exp(-x);
-            return ans;
-        } else { // Evaluate series
-            ans=(nm1!=0 ? 1.0/nm1 : -log(x)-eulerConstant);    // First term
-            fact=1.0;
-            for (i=1;i<=maxIterations;i++) {
-                fact*=-x/i;
-                if (i != nm1) {
-                    del = -fact/(i-nm1);
-                } else {
-                    psi = -eulerConstant;
-                    for (ii=1;ii<=nm1;ii++) {
-                        psi += 1.0/ii;
-                    }
-                    del=fact*(-log(x)+psi);
-                }
-                ans+=del;
-                if (fabs(del)<fabs(ans)*epsilon) return ans;
-            }
-            //cout << "Series failed in exponentialIntegral" << endl;
-            return ans;
-        }
-    }
-    return ans;
-}
-
-float exponentialIntegralFloat (const int n,const float x) {
-    static const float eulerConstant=0.5772156649015329;
-    float epsilon=1.E-30;
-    float bigfloat=std::numeric_limits<float>::max();
-    int i,ii,nm1=n-1;
-    float a,b,c,d,del,fact,h,psi,ans=0.0;
-
-    if (n<0 || x<0.0 || (x==0.0&&( (n==0) || (n==1) ) ) ) {
-        cout << "Bad arguments were passed to the exponentialIntegral function call" << endl;
-        exit(1);
-    }
-    if (n==0) {
-        ans=exp(-x)/x;
-    } else {
-        if (x>1.0) {
-            b=x+n;
-            c=bigfloat;
-            d=1.0/b;
-            h=d;
-            for (i=1;i<=maxIterations;i++) {
-                a=-i*(nm1+i);
-                b+=2.0;
-                d=1.0/(a*d+b);
-                c=b+a/c;
-                del=c*d;
-                h*=del;
-                if (fabs(del-1.0)<=epsilon) {
-                    ans=h*exp(-x);
-                    return ans;
-                }
-            }
-            ans=h*exp(-x);
-            return ans;
-        } else { // Evaluate series
-            ans=(nm1!=0 ? 1.0/nm1 : -log(x)-eulerConstant);    // First term
-            fact=1.0;
-            for (i=1;i<=maxIterations;i++) {
-                fact*=-x/i;
-                if (i != nm1) {
-                    del = -fact/(i-nm1);
-                } else {
-                    psi = -eulerConstant;
-                    for (ii=1;ii<=nm1;ii++) {
-                        psi += 1.0/ii;
-                    }
-                    del=fact*(-log(x)+psi);
-                }
-                ans+=del;
-                if (fabs(del)<fabs(ans)*epsilon) return ans;
-            }
-            return ans;
-        }
-    }
-    return ans;
-}
-
-int parseArguments (int argc, char *argv[]) {
+int parseArguments(int argc, char *argv[]) {
     int c;
-
-    while ((c = getopt (argc, argv, "cghn:m:a:b:i:tv")) != -1) {
+    while ((c = getopt(argc, argv, "cghn:m:a:b:i:tv")) != -1) {
         switch(c) {
-            case 'c':
-                cpu = false; break;     // Skip CPU test
-            case 'g':
-                gpu = false; break;     // Skip GPU test
-            case 'h':
-                printUsage(); exit(0); break;
-            case 'i':
-                maxIterations = atoi(optarg); break;
-            case 'n':
-                n = atoi(optarg); break;
-            case 'm':
-                numberOfSamples = atoi(optarg); break;
-            case 'a':
-                a = atof(optarg); break;
-            case 'b':
-                b = atof(optarg); break;
-            case 't':
-                timing = true; break;
-            case 'v':
-                verbose = true; break;
+            case 'c': cpu = false; break;
+            case 'g': gpu = false; break;
+            case 'h': printUsage(); exit(0);
+            case 'i': maxIterations = atoi(optarg); break;
+            case 'n': n = atoi(optarg); break;
+            case 'm': numberOfSamples = atoi(optarg); break;
+            case 'a': a = atof(optarg); break;
+            case 'b': b = atof(optarg); break;
+            case 't': timing = true; break;
+            case 'v': verbose = true; break;
             default:
                 fprintf(stderr, "Invalid option given\n");
                 printUsage();
@@ -342,25 +327,20 @@ int parseArguments (int argc, char *argv[]) {
     return 0;
 }
 
-void printUsage () {
-    printf("exponentialIntegral program - CUDA Accelerated Version\n");
-    printf("by: Jose Mauricio Refojo <refojoj@tcd.ie>\n");
-    printf("Modified for CUDA acceleration\n");
-    printf("usage:\n");
-    printf("exponentialIntegral.out [options]\n");
-    printf("      -a   value   : Set the start of interval (default: 0.0)\n");
-    printf("      -b   value   : Set the end of interval (default: 10.0)\n");
-    printf("      -c           : Skip CPU execution\n");
-    printf("      -g           : Skip GPU execution\n");
-    printf("      -h           : Show usage\n");
-    printf("      -i   size    : Set maximum iterations (default: 2000000000)\n");
-    printf("      -n   size    : Set maximum order n (default: 10)\n");
-    printf("      -m   size    : Set number of samples (default: 10)\n");
-    printf("      -t           : Enable timing output\n");
-    printf("      -v           : Enable verbose output\n");
-    printf("\nBenchmark examples:\n");
-    printf("  ./exponentialIntegral.out -n 5000 -m 5000 -t\n");
-    printf("  ./exponentialIntegral.out -n 8192 -m 8192 -t\n");
-    printf("  ./exponentialIntegral.out -n 16384 -m 16384 -t\n");
-    printf("  ./exponentialIntegral.out -n 20000 -m 20000 -t\n");
+void printUsage() {
+    printf("Exponential Integral Calculator\n");
+    printf("Usage: exponentialIntegral [options]\n");
+    printf("Options:\n");
+    printf("  -a <value>   Start of interval (default: 0.0)\n");
+    printf("  -b <value>   End of interval (default: 10.0)\n");
+    printf("  -c           Disable CPU computation\n");
+    printf("  -g           Disable GPU computation\n");
+    printf("  -h           Show this help message\n");
+    printf("  -i <value>   Max iterations (default: 2000000000)\n");
+    printf("  -n <value>   Maximum order n (default: 10)\n");
+    printf("  -m <value>   Number of samples (default: 10)\n");
+    printf("  -t           Enable timing output\n");
+    printf("  -v           Enable verbose output\n");
+    printf("\nExample:\n");
+    printf("  ./exponentialIntegral -n 5000 -m 5000 -t\n");
 }

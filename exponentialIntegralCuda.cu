@@ -11,7 +11,7 @@
     } \
 }
 
-// Device constants - using numeric literals
+// Device constants for maximum float/double values and NaN representations
 __constant__ float float_max = 3.402823466e+38f;  // FLT_MAX
 __constant__ float float_nan = 0x7fc00000;        // Quiet NaN bit pattern
 __constant__ double double_max = 1.7976931348623157e+308;  // DBL_MAX
@@ -158,18 +158,30 @@ void runGPU(std::vector<std::vector<float>>& resultsFloatGpu,
             double a, double b, int maxIterations,
             double& timeTotalGpu,
             double& timeFloatKernel,
-            double& timeDoubleKernel) {
+            double& timeDoubleKernel,
+            bool verbose) {
     float* d_results_float = nullptr;
     double* d_results_double = nullptr;
     float* h_results_float = new float[n * numberOfSamples];
     double* h_results_double = new double[n * numberOfSamples];
 
+    // Warm-up GPU to avoid initialization timing artifacts
+    cudaFree(0);
+
     CHECK(cudaMalloc((void**)&d_results_float, n * numberOfSamples * sizeof(float)));
     CHECK(cudaMalloc((void**)&d_results_double, n * numberOfSamples * sizeof(double)));
 
+    // Configure kernel launch parameters
     dim3 block(16, 16);
     dim3 grid((numberOfSamples + block.x - 1)/block.x, 
               (n + block.y - 1)/block.y);
+
+    if (verbose) {
+        std::cout << "GPU Kernel Configuration:" << std::endl;
+        std::cout << "  Grid size: (" << grid.x << ", " << grid.y << ")" << std::endl;
+        std::cout << "  Block size: (" << block.x << ", " << block.y << ")" << std::endl;
+        std::cout << "  Total threads: " << grid.x*grid.y*block.x*block.y << std::endl;
+    }
 
     cudaEvent_t start, stop, startFloat, stopFloat, startDouble, stopDouble;
     CHECK(cudaEventCreate(&start));
@@ -181,25 +193,26 @@ void runGPU(std::vector<std::vector<float>>& resultsFloatGpu,
 
     CHECK(cudaEventRecord(start));
 
-    // Float kernel
+    // Launch float precision kernel
     CHECK(cudaEventRecord(startFloat));
     exponentialIntegralFloatKernel<<<grid, block>>>(d_results_float, n, numberOfSamples, a, b, maxIterations);
     CHECK(cudaGetLastError());
     CHECK(cudaEventRecord(stopFloat));
     
-    // Double kernel
+    // Launch double precision kernel
     CHECK(cudaEventRecord(startDouble));
     exponentialIntegralDoubleKernel<<<grid, block>>>(d_results_double, n, numberOfSamples, a, b, maxIterations);
     CHECK(cudaGetLastError());
     CHECK(cudaEventRecord(stopDouble));
 
+    // Copy results back to host
     CHECK(cudaMemcpy(h_results_float, d_results_float, n * numberOfSamples * sizeof(float), cudaMemcpyDeviceToHost));
     CHECK(cudaMemcpy(h_results_double, d_results_double, n * numberOfSamples * sizeof(double), cudaMemcpyDeviceToHost));
     
     CHECK(cudaEventRecord(stop));
     CHECK(cudaEventSynchronize(stop));
 
-    // Convert timings to seconds
+    // Get timing results
     float tempTime;
     CHECK(cudaEventElapsedTime(&tempTime, startFloat, stopFloat));
     timeFloatKernel = tempTime/1000.0;
