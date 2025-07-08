@@ -1,7 +1,7 @@
 CC = g++
 NVCC = nvcc
-CFLAGS = -O3 -Wall
-NVCCFLAGS = -arch=sm_61 -O3 --expt-relaxed-constexpr
+CFLAGS = -O3 -Wall -march=native
+NVCCFLAGS = -arch=sm_75 -O3 --expt-relaxed-constexpr
 LDFLAGS = -lcudart -L/usr/local/cuda/lib64
 TARGET = exponentialIntegral
 OBJS = main.o exponentialIntegralCuda.o
